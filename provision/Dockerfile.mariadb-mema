@@ -1,0 +1,43 @@
+# mariadb:11 + mema-agent preinstalled, with a wrapper entrypoint that runs
+# both mariadbd and the agent in one container. Setup is performed once per
+# container filesystem lifetime using MEMA_* env vars; the agent runs in the
+# foreground via `mema-agent run` (no systemd needed).
+#
+# Required env per service: MEMA_HOSTNAME, MEMA_CLUSTER_NAME, MEMA_HOST_NAME.
+# (The agent endpoint is derived from MEMA_HOSTNAME by stripping :port.)
+# Optional: MEMA_DB_PORT (default 3306), MEMA_DB_USER (default root),
+# MEMA_DB_PASSWORD (default MARIADB_ROOT_PASSWORD).
+
+FROM mariadb:11
+
+ARG ENTERPRISE_TOKEN
+RUN test -n "$ENTERPRISE_TOKEN" || (echo "ENTERPRISE_TOKEN build arg required" && exit 1)
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Pull the enterprise-tools repo key, write a Signed-By sources file, install
+# mema-agent, then delete the sources file so the token isn't baked into the
+# final image's apt config. The keyring stays — harmless without the source.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
+ && install -d -m 0755 /etc/apt/keyrings \
+ && gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys CE1A3DD5E3C94F49 \
+ && gpg --export CE1A3DD5E3C94F49 > /etc/apt/keyrings/mariadb-enterprise.gpg \
+ && printf '%s\n' \
+      'Types: deb' \
+      'Architectures: amd64 arm64' \
+      "URIs: https://dlm.mariadb.com/repo/${ENTERPRISE_TOKEN}/enterprise-tools/latest/deb" \
+      'Suites: noble' \
+      'Components: main' \
+      'Signed-By: /etc/apt/keyrings/mariadb-enterprise.gpg' \
+      > /etc/apt/sources.list.d/mariadb-enterprise.sources \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends mema-agent \
+ && rm -f /etc/apt/sources.list.d/mariadb-enterprise.sources \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY mema-entrypoint.sh /usr/local/bin/mema-entrypoint.sh
+RUN chmod +x /usr/local/bin/mema-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/mema-entrypoint.sh"]
+CMD ["mariadbd"]

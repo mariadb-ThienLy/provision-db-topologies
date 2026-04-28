@@ -1,0 +1,289 @@
+# EM UI registration metadata (for Playwright tests):
+#   Topology:       Standalone server
+#   Database name:  standalone-docker
+#   Server name:    standalone-server
+#   Address:        127.0.0.1
+#   Port:           3306
+#   User:           root
+#   Password:       mariadb
+#
+#  Topology:       Primary/Replica
+#   Database name:  primary-replica-docker
+#   Servers:
+#     - primary    127.0.0.1:3307  root / mariadb
+#     - replica    127.0.0.1:3308  root / mariadb
+#
+#   Topology:       Galera Cluster
+#   Database name:  galera-docker
+#   Servers:
+#     - galera-1   127.0.0.1:3309  root / mariadb
+#     - galera-2   127.0.0.1:3310  root / mariadb
+#     - galera-3   127.0.0.1:3311  root / mariadb
+
+# Shared build for all six MariaDB services: a custom image with the
+# `mema-agent` deb preinstalled. The wrapper entrypoint (provision/
+# mema-entrypoint.sh) starts mariadbd, runs `mema-agent setup --skip-start`
+# once using the MEMA_* env vars below, then runs `mema-agent run --verbose`
+# in the foreground. ENTERPRISE_TOKEN is consumed at build time only and
+# scrubbed from the resulting image. No explicit image tag is set — compose
+# auto-names each as `<project>-<service>`, sharing layers via BuildKit cache.
+x-mariadb-mema: &mariadb-mema
+  build:
+    context: ./provision
+    dockerfile: Dockerfile.mariadb-mema
+    args:
+      ENTERPRISE_TOKEN: ${ENTERPRISE_TOKEN}
+
+# Shared env values. Merged into each service's `environment:` via `<<:`.
+# `MEMA_HOSTNAME` comes from `.env` (e.g. https://192.168.1.116:8090); the
+# entrypoint strips the trailing :port to derive the agent endpoint.
+x-mema-env: &mema-env
+  MARIADB_ROOT_PASSWORD: mariadb
+  MEMA_HOSTNAME: ${MEMA_HOSTNAME}
+
+configs:
+  primary-init:
+    content: |
+      CREATE USER IF NOT EXISTS 'repl'@'%' IDENTIFIED BY 'replpw';
+      GRANT REPLICATION SLAVE ON *.* TO 'repl'@'%';
+      RESET MASTER;
+  replica-init:
+    # Replica reaches primary via service-name DNS on db-net.
+    content: |
+      CHANGE MASTER TO
+        MASTER_HOST='primary',
+        MASTER_PORT=3307,
+        MASTER_USER='repl',
+        MASTER_PASSWORD='replpw',
+        MASTER_USE_GTID=slave_pos;
+      START SLAVE;
+  galera-init:
+    # Created on galera-1 during bootstrap; galera-2/3 receive it via SST.
+    content: |
+      CREATE USER IF NOT EXISTS 'mariabackup'@'%' IDENTIFIED BY 'backuppw';
+      GRANT RELOAD, PROCESS, LOCK TABLES, BINLOG MONITOR ON *.* TO 'mariabackup'@'%';
+
+networks:
+  # Standalone + primary/replica. Bridge gives each container its own
+  # private 127.0.0.1, so all three mema-agents can bind their default
+  # exporter ports (:18901 / :18902) without clashing on the host.
+  db-net:
+    driver: bridge
+  galera-net:
+    driver: bridge
+
+volumes:
+  standalone-data:
+    name: enterprise-manager-standalone
+  primary-data:
+    name: enterprise-manager-primary
+  replica-data:
+    name: enterprise-manager-replica
+  galera-1-data:
+    name: enterprise-manager-galera-1
+  galera-2-data:
+    name: enterprise-manager-galera-2
+  galera-3-data:
+    name: enterprise-manager-galera-3
+
+services:
+  standalone:
+    <<: *mariadb-mema
+    container_name: enterprise-manager-standalone
+    networks: [db-net]
+    ports:
+      - '127.0.0.1:3306:3306'
+    restart: always
+    volumes:
+      - standalone-data:/var/lib/mysql
+    environment:
+      <<: *mema-env
+      MEMA_CLUSTER_NAME: standalone-docker
+      MEMA_HOST_NAME: standalone-docker@standalone-server
+    healthcheck:
+      test: ['CMD', 'healthcheck.sh', '--connect']
+      interval: 5s
+      retries: 20
+      start_period: 30s
+
+  primary:
+    <<: *mariadb-mema
+    container_name: enterprise-manager-primary
+    networks: [db-net]
+    ports:
+      - '127.0.0.1:3307:3307'
+    restart: always
+    volumes:
+      - primary-data:/var/lib/mysql
+    command: >-
+      --port=3307
+      --server-id=1
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+    environment:
+      <<: *mema-env
+      MEMA_CLUSTER_NAME: primary-replica-docker
+      MEMA_HOST_NAME: primary-replica-docker@primary
+      MEMA_DB_PORT: '3307'
+    configs:
+      - source: primary-init
+        target: /docker-entrypoint-initdb.d/99-replication-user.sql
+    healthcheck:
+      test: ['CMD', 'healthcheck.sh', '--connect']
+      interval: 5s
+      retries: 30
+      start_period: 30s
+
+  replica:
+    <<: *mariadb-mema
+    container_name: enterprise-manager-replica
+    networks: [db-net]
+    ports:
+      - '127.0.0.1:3308:3308'
+    restart: always
+    volumes:
+      - replica-data:/var/lib/mysql
+    depends_on:
+      primary:
+        condition: service_healthy
+    command: >-
+      --port=3308
+      --server-id=2
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --report-host=replica
+      --report-port=3308
+    environment:
+      <<: *mema-env
+      MEMA_CLUSTER_NAME: primary-replica-docker
+      MEMA_HOST_NAME: primary-replica-docker@replica
+      MEMA_DB_PORT: '3308'
+    configs:
+      - source: replica-init
+        target: /docker-entrypoint-initdb.d/99-start-replication.sql
+    healthcheck:
+      test: ['CMD', 'healthcheck.sh', '--connect']
+      interval: 5s
+      retries: 30
+      start_period: 30s
+
+  galera-1:
+    <<: *mariadb-mema
+    container_name: enterprise-manager-galera-1
+    restart: always
+    networks: [galera-net]
+    ports:
+      - '127.0.0.1:3309:3306'
+    volumes:
+      - galera-1-data:/var/lib/mysql
+    command: >-
+      --wsrep-new-cluster
+      --wsrep_on=ON
+      --wsrep_provider=/usr/lib/galera/libgalera_smm.so
+      --wsrep_cluster_name=test-cluster
+      --wsrep_cluster_address=gcomm://galera-1,galera-2,galera-3
+      --wsrep_sst_method=mariabackup
+      --wsrep_sst_auth=mariabackup:backuppw
+      --wsrep_node_name=galera-1
+      --wsrep_node_address=galera-1
+      --wsrep_node_incoming_address=127.0.0.1:3309
+      --server-id=1
+      --bind-address=0.0.0.0
+      --default-storage-engine=InnoDB
+      --innodb_autoinc_lock_mode=2
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+    environment:
+      <<: *mema-env
+      MEMA_CLUSTER_NAME: galera-docker
+      MEMA_HOST_NAME: galera-docker@galera-1
+    configs:
+      - source: galera-init
+        target: /docker-entrypoint-initdb.d/99-mariabackup-user.sql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mariadb -uroot -pmariadb -BNs -e "SHOW STATUS LIKE 'wsrep_ready'" | grep -q ON
+      interval: 5s
+      retries: 30
+      start_period: 60s
+
+  galera-2:
+    <<: *mariadb-mema
+    container_name: enterprise-manager-galera-2
+    restart: always
+    networks: [galera-net]
+    ports:
+      - '127.0.0.1:3310:3306'
+    volumes:
+      - galera-2-data:/var/lib/mysql
+    depends_on:
+      galera-1:
+        condition: service_healthy
+    command: >-
+      --wsrep_on=ON
+      --wsrep_provider=/usr/lib/galera/libgalera_smm.so
+      --wsrep_cluster_name=test-cluster
+      --wsrep_cluster_address=gcomm://galera-1,galera-2,galera-3
+      --wsrep_sst_method=mariabackup
+      --wsrep_sst_auth=mariabackup:backuppw
+      --wsrep_node_name=galera-2
+      --wsrep_node_address=galera-2
+      --wsrep_node_incoming_address=127.0.0.1:3310
+      --server-id=2
+      --bind-address=0.0.0.0
+      --default-storage-engine=InnoDB
+      --innodb_autoinc_lock_mode=2
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+    environment:
+      <<: *mema-env
+      MEMA_CLUSTER_NAME: galera-docker
+      MEMA_HOST_NAME: galera-docker@galera-2
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mariadb -uroot -pmariadb -BNs -e "SHOW STATUS LIKE 'wsrep_ready'" | grep -q ON
+      interval: 5s
+      retries: 30
+      start_period: 60s
+
+  galera-3:
+    <<: *mariadb-mema
+    container_name: enterprise-manager-galera-3
+    restart: always
+    networks: [galera-net]
+    ports:
+      - '127.0.0.1:3311:3306'
+    volumes:
+      - galera-3-data:/var/lib/mysql
+    depends_on:
+      galera-1:
+        condition: service_healthy
+    command: >-
+      --wsrep_on=ON
+      --wsrep_provider=/usr/lib/galera/libgalera_smm.so
+      --wsrep_cluster_name=test-cluster
+      --wsrep_cluster_address=gcomm://galera-1,galera-2,galera-3
+      --wsrep_sst_method=mariabackup
+      --wsrep_sst_auth=mariabackup:backuppw
+      --wsrep_node_name=galera-3
+      --wsrep_node_address=galera-3
+      --wsrep_node_incoming_address=127.0.0.1:3311
+      --server-id=3
+      --bind-address=0.0.0.0
+      --default-storage-engine=InnoDB
+      --innodb_autoinc_lock_mode=2
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+    environment:
+      <<: *mema-env
+      MEMA_CLUSTER_NAME: galera-docker
+      MEMA_HOST_NAME: galera-docker@galera-3
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mariadb -uroot -pmariadb -BNs -e "SHOW STATUS LIKE 'wsrep_ready'" | grep -q ON
+      interval: 5s
+      retries: 30
+      start_period: 60s
