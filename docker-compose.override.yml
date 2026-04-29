@@ -1,5 +1,5 @@
 # EM UI registration metadata (for Playwright tests):
-#   Topology:       Standalone server
+#   Topology:       Standalone server                      (mema-agent)
 #   Database name:  standalone-docker
 #   Server name:    standalone-server
 #   Address:        127.0.0.1
@@ -10,7 +10,7 @@
 #  Topology:       Primary/Replica
 #   Database name:  primary-replica-docker
 #   Servers:
-#     - primary    127.0.0.1:3307  root / mariadb
+#     - primary    127.0.0.1:3307  root / mariadb         (mema-agent)
 #     - replica    127.0.0.1:3308  root / mariadb
 #
 #   Topology:       Galera Cluster
@@ -20,13 +20,18 @@
 #     - galera-2   127.0.0.1:3310  root / mariadb
 #     - galera-3   127.0.0.1:3311  root / mariadb
 
-# Shared build for all six MariaDB services: a custom image with the
-# `mema-agent` deb preinstalled. The wrapper entrypoint (provision/
-# mema-entrypoint.sh) starts mariadbd, runs `mema-agent setup --skip-start`
-# once using the MEMA_* env vars below, then runs `mema-agent run --verbose`
-# in the foreground. ENTERPRISE_TOKEN is consumed at build time only and
-# scrubbed from the resulting image. No explicit image tag is set — compose
-# auto-names each as `<project>-<service>`, sharing layers via BuildKit cache.
+# Custom image with the `mema-agent` deb preinstalled, used by the two
+# servers that exercise the agent registration path (`standalone` and
+# `primary`). The wrapper entrypoint (provision/mema-entrypoint.sh)
+# starts mariadbd, runs `mema-agent setup --skip-start` once using the
+# MEMA_* env vars below, then runs `mema-agent run --verbose` in the
+# foreground. ENTERPRISE_TOKEN is consumed at build time only and
+# scrubbed from the resulting image. No explicit image tag is set —
+# compose auto-names each as `<project>-<service>`, sharing layers via
+# BuildKit cache. The other four services (`replica` + galera nodes)
+# run plain `mariadb:11`; EM auto-discovers the replica via
+# `SHOW SLAVE HOSTS` and the Galera test only needs the cluster row to
+# land.
 x-mariadb-mema: &mariadb-mema
   build:
     context: ./provision
@@ -34,9 +39,11 @@ x-mariadb-mema: &mariadb-mema
     args:
       ENTERPRISE_TOKEN: ${ENTERPRISE_TOKEN}
 
-# Shared env values. Merged into each service's `environment:` via `<<:`.
-# `MEMA_HOSTNAME` comes from `.env` (e.g. https://192.168.1.116:8090); the
-# entrypoint strips the trailing :port to derive the agent endpoint.
+# Env values for the two mema-agent services (`standalone` and
+# `primary`). Merged into their `environment:` via `<<:`.
+# `MEMA_HOSTNAME` comes from `.env` (e.g. https://192.168.1.116:8090);
+# the entrypoint strips the trailing :port to derive the agent
+# endpoint.
 x-mema-env: &mema-env
   MARIADB_ROOT_PASSWORD: mariadb
   MEMA_HOSTNAME: ${MEMA_HOSTNAME}
@@ -65,8 +72,9 @@ configs:
 
 networks:
   # Standalone + primary/replica. Bridge gives each container its own
-  # private 127.0.0.1, so all three mema-agents can bind their default
-  # exporter ports (:18901 / :18902) without clashing on the host.
+  # private 127.0.0.1, so the two mema-agents (standalone, primary) can
+  # bind their default exporter ports (:18901 / :18902) without
+  # clashing on the host.
   db-net:
     driver: bridge
   galera-net:
@@ -135,7 +143,7 @@ services:
       start_period: 30s
 
   replica:
-    <<: *mariadb-mema
+    image: mariadb:11
     container_name: enterprise-manager-replica
     networks: [db-net]
     ports:
@@ -154,10 +162,7 @@ services:
       --report-host=replica
       --report-port=3308
     environment:
-      <<: *mema-env
-      MEMA_CLUSTER_NAME: primary-replica-docker
-      MEMA_HOST_NAME: primary-replica-docker@replica
-      MEMA_DB_PORT: '3308'
+      MARIADB_ROOT_PASSWORD: mariadb
     configs:
       - source: replica-init
         target: /docker-entrypoint-initdb.d/99-start-replication.sql
@@ -168,7 +173,7 @@ services:
       start_period: 30s
 
   galera-1:
-    <<: *mariadb-mema
+    image: mariadb:11
     container_name: enterprise-manager-galera-1
     restart: always
     networks: [galera-net]
@@ -194,9 +199,7 @@ services:
       --log-bin=mysql-bin
       --binlog-format=ROW
     environment:
-      <<: *mema-env
-      MEMA_CLUSTER_NAME: galera-docker
-      MEMA_HOST_NAME: galera-docker@galera-1
+      MARIADB_ROOT_PASSWORD: mariadb
     configs:
       - source: galera-init
         target: /docker-entrypoint-initdb.d/99-mariabackup-user.sql
@@ -209,7 +212,7 @@ services:
       start_period: 60s
 
   galera-2:
-    <<: *mariadb-mema
+    image: mariadb:11
     container_name: enterprise-manager-galera-2
     restart: always
     networks: [galera-net]
@@ -237,9 +240,7 @@ services:
       --log-bin=mysql-bin
       --binlog-format=ROW
     environment:
-      <<: *mema-env
-      MEMA_CLUSTER_NAME: galera-docker
-      MEMA_HOST_NAME: galera-docker@galera-2
+      MARIADB_ROOT_PASSWORD: mariadb
     healthcheck:
       test:
         - CMD-SHELL
@@ -249,7 +250,7 @@ services:
       start_period: 60s
 
   galera-3:
-    <<: *mariadb-mema
+    image: mariadb:11
     container_name: enterprise-manager-galera-3
     restart: always
     networks: [galera-net]
@@ -277,9 +278,7 @@ services:
       --log-bin=mysql-bin
       --binlog-format=ROW
     environment:
-      <<: *mema-env
-      MEMA_CLUSTER_NAME: galera-docker
-      MEMA_HOST_NAME: galera-docker@galera-3
+      MARIADB_ROOT_PASSWORD: mariadb
     healthcheck:
       test:
         - CMD-SHELL

@@ -1,6 +1,6 @@
 # Provision DB Topologies for Enterprise Manager
 
-This directory provides Docker-based MariaDB topologies with the mema-agent pre-installed.
+Docker-based MariaDB topologies for testing Enterprise Manager. The `mema-agent` is preinstalled and registered on two servers: `standalone` and `primary`. The replica is auto-discovered by EM via `SHOW SLAVE HOSTS` on the primary; Galera nodes run without the agent and are added to EM manually.
 
 ## Adding to Existing enterprise-manager Directory
 
@@ -10,12 +10,15 @@ This directory provides Docker-based MariaDB topologies with the mema-agent pre-
    cp docker-compose.override.yml <path-to-enterprise-manager>/
    ```
 
-2. **Add the enterprise token to `.env`:**
+2. **Add the required variables to `.env`:**
 
-   Get your token from https://customers.mariadb.com/downloads/token/
+   Get your enterprise token from https://customers.mariadb.com/downloads/token/
 
    ```bash
-   echo "ENTERPRISE_TOKEN=your_token_here" >> <path-to-enterprise-manager>/.env
+   cat >> <path-to-enterprise-manager>/.env <<'EOF'
+   ENTERPRISE_TOKEN=your_token_here
+   MEMA_HOSTNAME=https://your-em-host:8090
+   EOF
    ```
 
 3. **Start the containers:**
@@ -26,10 +29,10 @@ This directory provides Docker-based MariaDB topologies with the mema-agent pre-
 
 ## Available Topologies
 
-- **Standalone** — Single MariaDB server on port 3306
-- **Primary/Replica** — Primary on port 3307, replica on port 3308
-- **Galera Cluster** — Three-node cluster on ports 3309-3311
+- **Standalone** — Single MariaDB server on port 3306 (mema-agent registered)
+- **Primary/Replica** — Primary on port 3307 (mema-agent registered), replica on port 3308 (auto-discovered via `SHOW SLAVE HOSTS`)
+- **Galera Cluster** — Three-node cluster on ports 3309-3311 (no agent; add manually in EM)
 
 ## Configuration
 
-The `ENTERPRISE_TOKEN` argument is consumed at build time and scrubbed from the final image. The agent endpoint is derived from `MEMA_HOSTNAME` in `.env` (the existing Enterprise Manager URL with the `:port` suffix stripped).
+`ENTERPRISE_TOKEN` is consumed at build time and scrubbed from the final image. The agent endpoint is derived from `MEMA_HOSTNAME` in `.env` (the existing Enterprise Manager URL with the trailing `:port` stripped).
