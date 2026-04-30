@@ -143,7 +143,10 @@ services:
       start_period: 30s
 
   replica:
-    image: mariadb:11
+    build:
+      dockerfile_inline: |
+        FROM mariadb:11
+    image: enterprise-manager-replica
     container_name: enterprise-manager-replica
     networks: [db-net]
     ports:
@@ -173,7 +176,10 @@ services:
       start_period: 30s
 
   galera-1:
-    image: mariadb:11
+    build:
+      dockerfile_inline: |
+        FROM mariadb:11
+    image: enterprise-manager-galera-1
     container_name: enterprise-manager-galera-1
     restart: always
     networks: [galera-net]
@@ -212,7 +218,10 @@ services:
       start_period: 60s
 
   galera-2:
-    image: mariadb:11
+    build:
+      dockerfile_inline: |
+        FROM mariadb:11
+    image: enterprise-manager-galera-2
     container_name: enterprise-manager-galera-2
     restart: always
     networks: [galera-net]
@@ -250,7 +259,10 @@ services:
       start_period: 60s
 
   galera-3:
-    image: mariadb:11
+    build:
+      dockerfile_inline: |
+        FROM mariadb:11
+    image: enterprise-manager-galera-3
     container_name: enterprise-manager-galera-3
     restart: always
     networks: [galera-net]
