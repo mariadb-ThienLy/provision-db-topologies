@@ -24,7 +24,10 @@
 #   Database name:  primary-replica-maxscale-docker
 #   Server (registered in EM as the MaxScale REST API):
 #     - maxscale_1 127.0.0.1:8989  admin / mariadb        (mema-agent)
-#   (Backends auto-discovered by EM via MaxScale: mxs-server-1, mxs-server-2.
+#   (Backends auto-discovered by EM via MaxScale: mxs-server-1, mxs-server-2,
+#    plus mxs-server-3 — a dummy backend pointed at the RFC 5737 TEST-NET-3
+#    address 192.0.2.3:3314 that is always Down, used to exercise EM's
+#    handling of an unreachable backend.
 #    SQL listener exposed on 127.0.0.1:4006 for direct client traffic.)
 
 # Custom image with the `mema-agent` deb preinstalled, used by the two
@@ -124,10 +127,20 @@ configs:
       port=3313
       protocol=MariaDBBackend
 
+      # Dummy backend with no matching service — points at an RFC 5737
+      # TEST-NET-3 address that is guaranteed unroutable, so mariadbmon
+      # always reports it as Down. Used to exercise EM's handling of an
+      # unreachable backend in a MaxScale topology.
+      [mxs-server-3]
+      type=server
+      address=192.0.2.3
+      port=3314
+      protocol=MariaDBBackend
+
       [MariaDB-Monitor]
       type=monitor
       module=mariadbmon
-      servers=mxs-server-1,mxs-server-2
+      servers=mxs-server-1,mxs-server-2,mxs-server-3
       user=admin
       password=mariadb
       monitor_interval=2000ms
@@ -137,7 +150,7 @@ configs:
       [Read-Write-Service]
       type=service
       router=readwritesplit
-      servers=mxs-server-1,mxs-server-2
+      servers=mxs-server-1,mxs-server-2,mxs-server-3
       user=admin
       password=mariadb
 
