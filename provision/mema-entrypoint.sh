@@ -48,6 +48,7 @@ if [ ! -f /var/lib/mema-agent/mema-agent-otelcol.yaml ]; then
     --mariadb-port="${MEMA_DB_PORT:-3306}" \
     --mariadb-user="${MEMA_DB_USER:-root}" \
     --mariadb-password="${MEMA_DB_PASSWORD:-${MARIADB_ROOT_PASSWORD}}" \
+    --otlp-interval="10s" \  
     --otlp-insecure
 fi
 
