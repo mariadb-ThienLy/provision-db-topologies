@@ -19,6 +19,13 @@
 #     - galera-1   127.0.0.1:3309  root / mariadb
 #     - galera-2   127.0.0.1:3310  root / mariadb
 #     - galera-3   127.0.0.1:3311  root / mariadb
+#
+#   Topology:       Primary/Replica with MaxScale
+#   Database name:  primary-replica-maxscale-docker
+#   Server (registered in EM as the MaxScale REST API):
+#     - maxscale_1 127.0.0.1:8989  admin / mariadb        (mema-agent)
+#   (Backends auto-discovered by EM via MaxScale: mxs-server-1, mxs-server-2.
+#    SQL listener exposed on 127.0.0.1:4006 for direct client traffic.)
 
 # Custom image with the `mema-agent` deb preinstalled, used by the two
 # servers that exercise the agent registration path (`standalone` and
@@ -69,6 +76,77 @@ configs:
     content: |
       CREATE USER IF NOT EXISTS 'mariabackup'@'%' IDENTIFIED BY 'backuppw';
       GRANT RELOAD, PROCESS, LOCK TABLES, BINLOG MONITOR ON *.* TO 'mariabackup'@'%';
+  mxs-server-1-init:
+    # admin@'%' is created AFTER `RESET MASTER` so it lands in the fresh
+    # binlog and replicates to mxs-server-2 when START SLAVE runs there —
+    # MaxScale's monitor needs admin credentials on both backends.
+    content: |
+      CREATE USER IF NOT EXISTS 'repl'@'%' IDENTIFIED BY 'replpw';
+      GRANT REPLICATION SLAVE ON *.* TO 'repl'@'%';
+      RESET MASTER;
+      CREATE USER IF NOT EXISTS 'admin'@'%' IDENTIFIED BY 'mariadb';
+      GRANT ALL PRIVILEGES ON *.* TO 'admin'@'%' WITH GRANT OPTION;
+  mxs-server-2-init:
+    # Replica reaches primary by service-name DNS on mxs-net.
+    content: |
+      CHANGE MASTER TO
+        MASTER_HOST='mxs-server-1',
+        MASTER_PORT=3312,
+        MASTER_USER='repl',
+        MASTER_PASSWORD='replpw',
+        MASTER_USE_GTID=slave_pos;
+      START SLAVE;
+  maxscale-cnf:
+    # mariadbmon + readwritesplit. Backends reached by service-name DNS on
+    # mxs-net. admin/mariadb matches the user seeded by mxs-server-1-init.
+    # admin_oidc_* points at the EM origin (MEMA_HOSTNAME from .env) so the
+    # MaxScale GUI can SSO against EM as the `admin` service account.
+    content: |
+      [maxscale]
+      threads=auto
+      admin_host=0.0.0.0
+      admin_port=8989
+      admin_secure_gui=false
+      admin_oidc_url=${MEMA_HOSTNAME}
+      admin_oidc_client_id=admin
+      admin_oidc_client_secret=mariadb
+      admin_oidc_ssl_insecure=true
+
+      [mxs-server-1]
+      type=server
+      address=mxs-server-1
+      port=3312
+      protocol=MariaDBBackend
+
+      [mxs-server-2]
+      type=server
+      address=mxs-server-2
+      port=3313
+      protocol=MariaDBBackend
+
+      [MariaDB-Monitor]
+      type=monitor
+      module=mariadbmon
+      servers=mxs-server-1,mxs-server-2
+      user=admin
+      password=mariadb
+      monitor_interval=2000ms
+      auto_failover=true
+      auto_rejoin=true
+
+      [Read-Write-Service]
+      type=service
+      router=readwritesplit
+      servers=mxs-server-1,mxs-server-2
+      user=admin
+      password=mariadb
+
+      [Read-Write-Listener]
+      type=listener
+      service=Read-Write-Service
+      protocol=MariaDBClient
+      address=0.0.0.0
+      port=4006
 
 networks:
   # Standalone + primary/replica. Bridge gives each container its own
@@ -78,6 +156,8 @@ networks:
   db-net:
     driver: bridge
   galera-net:
+    driver: bridge
+  mxs-net:
     driver: bridge
 
 volumes:
@@ -93,6 +173,10 @@ volumes:
     name: enterprise-manager-galera-2
   galera-3-data:
     name: enterprise-manager-galera-3
+  mxs-server-1-data:
+    name: enterprise-manager-mxs-server-1
+  mxs-server-2-data:
+    name: enterprise-manager-mxs-server-2
 
 services:
   standalone:
@@ -296,5 +380,105 @@ services:
         - CMD-SHELL
         - mariadb -uroot -pmariadb -BNs -e "SHOW STATUS LIKE 'wsrep_ready'" | grep -q ON
       interval: 5s
+      retries: 30
+      start_period: 60s
+
+ # Primary/Replica fronted by MaxScale 25.10.2 (mema-agent on the
+  # MaxScale node, not on the servers). EM registers the MaxScale REST
+  # API on :8989 and auto-discovers the servers. Servers find each
+  # other by service-name DNS on mxs-net; mariadbmon takes care of
+  # promoting the primary and tracking the replica.
+  mxs-server-1:
+    build:
+      dockerfile_inline: |
+        FROM mariadb:11
+    image: enterprise-manager-mxs-server-1
+    container_name: enterprise-manager-mxs-server-1
+    restart: always
+    networks: [mxs-net]
+    ports:
+      - '127.0.0.1:3312:3312'
+    volumes:
+      - mxs-server-1-data:/var/lib/mysql
+    command: >-
+      --port=3312
+      --server-id=11
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --report-host=mxs-server-1
+      --report-port=3312
+    environment:
+      MARIADB_ROOT_PASSWORD: mariadb
+    configs:
+      - source: mxs-server-1-init
+        target: /docker-entrypoint-initdb.d/99-replication-and-admin.sql
+    healthcheck:
+      test: ['CMD', 'healthcheck.sh', '--connect']
+      interval: 5s
+      retries: 30
+      start_period: 30s
+
+  mxs-server-2:
+    build:
+      dockerfile_inline: |
+        FROM mariadb:11
+    image: enterprise-manager-mxs-server-2
+    container_name: enterprise-manager-mxs-server-2
+    restart: always
+    networks: [mxs-net]
+    ports:
+      - '127.0.0.1:3313:3313'
+    volumes:
+      - mxs-server-2-data:/var/lib/mysql
+    depends_on:
+      mxs-server-1:
+        condition: service_healthy
+    command: >-
+      --port=3313
+      --server-id=12
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --report-host=mxs-server-2
+      --report-port=3313
+    environment:
+      MARIADB_ROOT_PASSWORD: mariadb
+    configs:
+      - source: mxs-server-2-init
+        target: /docker-entrypoint-initdb.d/99-start-replication.sql
+    healthcheck:
+      test: ['CMD', 'healthcheck.sh', '--connect']
+      interval: 5s
+      retries: 30
+      start_period: 30s
+
+  maxscale:
+    build:
+      context: ./provision
+      dockerfile: Dockerfile.maxscale-mema
+      args:
+        ENTERPRISE_TOKEN: ${ENTERPRISE_TOKEN}
+    container_name: enterprise-manager-maxscale
+    restart: always
+    networks: [mxs-net]
+    ports:
+      - '127.0.0.1:4006:4006'
+      - '127.0.0.1:8989:8989'
+    depends_on:
+      mxs-server-1:
+        condition: service_healthy
+      mxs-server-2:
+        condition: service_healthy
+    environment:
+      MEMA_HOSTNAME: ${MEMA_HOSTNAME}
+      MEMA_CLUSTER_NAME: primary-replica-maxscale-docker
+      MEMA_HOST_NAME: primary-replica-maxscale-docker@maxscale_1
+    configs:
+      - source: maxscale-cnf
+        target: /etc/maxscale.cnf
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sf -o /dev/null -u admin:mariadb http://127.0.0.1:8989/v1/maxscale || exit 1
+      interval: 10s
       retries: 30
       start_period: 60s

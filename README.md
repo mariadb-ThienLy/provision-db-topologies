@@ -32,6 +32,7 @@ Docker-based MariaDB topologies for testing Enterprise Manager. The `mema-agent`
 - **Standalone** — Single MariaDB server on port 3306 (mema-agent registered)
 - **Primary/Replica** — Primary on port 3307 (mema-agent registered), replica on port 3308 (auto-discovered via `SHOW SLAVE HOSTS`)
 - **Galera Cluster** — Three-node cluster on ports 3309-3311 (no agent; add manually in EM)
+- **Primary/Replica with MaxScale** — MaxScale REST API on port 8989 (mema-agent registered) with SQL listener on port 4006; backends `mxs-server-1` (3312) and `mxs-server-2` (3313) auto-discovered by EM via MaxScale
 
 ## Configuration
 

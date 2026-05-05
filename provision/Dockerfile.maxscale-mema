@@ -1,0 +1,37 @@
+# ubuntu:24.04 + MaxScale 25.10.2 enterprise + mema-agent preinstalled,
+# with a wrapper entrypoint that runs both maxscale and the agent in one
+# container. Setup is performed once per container fs lifetime; the agent
+# runs in the foreground via `mema-agent run` (no systemd needed).
+#
+# Required env per service: MEMA_HOSTNAME, MEMA_CLUSTER_NAME, MEMA_HOST_NAME.
+# (The agent endpoint is derived from MEMA_HOSTNAME by stripping :port.)
+
+FROM ubuntu:24.04
+
+ARG ENTERPRISE_TOKEN
+RUN test -n "$ENTERPRISE_TOKEN" || (echo "ENTERPRISE_TOKEN build arg required" && exit 1)
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# `mariadb_es_repo_setup --apply` wires up both the maxscale 25.10.2 repo
+# and the enterprise-tools repo (which carries mema-agent), keyrings and
+# all. Trying to add a second sources file for enterprise-tools by hand
+# trips apt's `Conflicting values set for option Signed-By` check, so
+# install both packages directly off the helper's repos and scrub them
+# afterwards so the token isn't baked into the final image.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl \
+ && curl -LsS https://dlm.mariadb.com/enterprise-release-helpers/mariadb_es_repo_setup \
+      | bash -s -- --token="${ENTERPRISE_TOKEN}" --mariadb-maxscale-version=25.10.2 --apply \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends \
+      maxscale \
+      mema-agent \
+ && rm -f /etc/apt/sources.list.d/mariadb*.list \
+          /etc/apt/sources.list.d/mariadb*.sources \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY maxscale-mema-entrypoint.sh /usr/local/bin/maxscale-mema-entrypoint.sh
+RUN chmod +x /usr/local/bin/maxscale-mema-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/maxscale-mema-entrypoint.sh"]
