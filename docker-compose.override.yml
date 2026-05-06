@@ -79,6 +79,11 @@ configs:
     content: |
       CREATE USER IF NOT EXISTS 'mariabackup'@'%' IDENTIFIED BY 'backuppw';
       GRANT RELOAD, PROCESS, LOCK TABLES, BINLOG MONITOR ON *.* TO 'mariabackup'@'%';
+  galera-entrypoint:
+    # Smart entrypoint mounted on all three galera nodes. Decides whether to
+    # add `--wsrep-new-cluster` based on grastate.dat, so any node that was
+    # last to stop cleanly can bootstrap on the next `up`.
+    file: ./provision/galera-entrypoint.sh
   mxs-server-1-init:
     # admin@'%' is created AFTER `RESET MASTER` so it lands in the fresh
     # binlog and replicates to mxs-server-2 when START SLAVE runs there —
@@ -279,13 +284,19 @@ services:
     image: enterprise-manager-galera-1
     container_name: enterprise-manager-galera-1
     restart: always
+    # Give Galera time to coordinate a clean shutdown on OS reboot. Without
+    # this, dockerd's default 10s SIGTERM-to-SIGKILL window often kills
+    # mariadbd before it writes `safe_to_bootstrap: 1` on the last surviving
+    # node — leading to all nodes coming back with seqno=-1 after boot.
+    stop_grace_period: 60s
     networks: [galera-net]
     ports:
       - '127.0.0.1:3309:3306'
     volumes:
       - galera-1-data:/var/lib/mysql
+    entrypoint: /usr/local/bin/galera-entrypoint.sh
     command: >-
-      --wsrep-new-cluster
+      mariadbd
       --wsrep_on=ON
       --wsrep_provider=/usr/lib/galera/libgalera_smm.so
       --wsrep_cluster_name=test-cluster
@@ -303,9 +314,14 @@ services:
       --binlog-format=ROW
     environment:
       MARIADB_ROOT_PASSWORD: mariadb
+      # Only galera-1 force-bootstraps when no node has any state yet (fresh
+      # volumes). On subsequent restarts the entrypoint defers to grastate.dat.
+      GALERA_PREFER_BOOTSTRAP: '1'
     configs:
       - source: galera-init
         target: /docker-entrypoint-initdb.d/99-mariabackup-user.sql
+      - source: galera-entrypoint
+        target: /usr/local/bin/galera-entrypoint.sh
     healthcheck:
       test:
         - CMD-SHELL
@@ -321,15 +337,21 @@ services:
     image: enterprise-manager-galera-2
     container_name: enterprise-manager-galera-2
     restart: always
+    stop_grace_period: 60s
     networks: [galera-net]
     ports:
       - '127.0.0.1:3310:3306'
     volumes:
       - galera-2-data:/var/lib/mysql
+    # service_started (not service_healthy): if galera-1's grastate.dat says it
+    # can't bootstrap, it'll wait for a peer — gating galera-2 on its health
+    # would deadlock. Whichever node has safe_to_bootstrap=1 wins.
     depends_on:
       galera-1:
-        condition: service_healthy
+        condition: service_started
+    entrypoint: /usr/local/bin/galera-entrypoint.sh
     command: >-
+      mariadbd
       --wsrep_on=ON
       --wsrep_provider=/usr/lib/galera/libgalera_smm.so
       --wsrep_cluster_name=test-cluster
@@ -347,6 +369,9 @@ services:
       --binlog-format=ROW
     environment:
       MARIADB_ROOT_PASSWORD: mariadb
+    configs:
+      - source: galera-entrypoint
+        target: /usr/local/bin/galera-entrypoint.sh
     healthcheck:
       test:
         - CMD-SHELL
@@ -362,15 +387,19 @@ services:
     image: enterprise-manager-galera-3
     container_name: enterprise-manager-galera-3
     restart: always
+    stop_grace_period: 60s
     networks: [galera-net]
     ports:
       - '127.0.0.1:3311:3306'
     volumes:
       - galera-3-data:/var/lib/mysql
+    # See galera-2 note on service_started.
     depends_on:
       galera-1:
-        condition: service_healthy
+        condition: service_started
+    entrypoint: /usr/local/bin/galera-entrypoint.sh
     command: >-
+      mariadbd
       --wsrep_on=ON
       --wsrep_provider=/usr/lib/galera/libgalera_smm.so
       --wsrep_cluster_name=test-cluster
@@ -388,6 +417,9 @@ services:
       --binlog-format=ROW
     environment:
       MARIADB_ROOT_PASSWORD: mariadb
+    configs:
+      - source: galera-entrypoint
+        target: /usr/local/bin/galera-entrypoint.sh
     healthcheck:
       test:
         - CMD-SHELL
