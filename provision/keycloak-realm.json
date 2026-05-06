@@ -1,0 +1,56 @@
+{
+  "realm": "enterprise-manager",
+  "enabled": true,
+  "clients": [
+    {
+      "clientId": "enterprise-manager",
+      "name": "Enterprise Manager",
+      "description": "Enterprise Manager",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "rootUrl": "${MEMA_HOSTNAME}",
+      "baseUrl": "${MEMA_HOSTNAME}",
+      "redirectUris": ["${MEMA_HOSTNAME}/landing"],
+      "webOrigins": ["${MEMA_HOSTNAME}"],
+      "attributes": {
+        "post.logout.redirect.uris": "${MEMA_HOSTNAME}/"
+      },
+      "protocolMappers": [
+        {
+          "name": "Account",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "account",
+            "claim.value": "admin",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "keycloak-user",
+      "firstName": "enterprise-manager",
+      "lastName": "MariaDB",
+      "email": "keycloak-user@mariadb.com",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "mariadb",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}
