@@ -41,7 +41,7 @@
       "username": "keycloak-user",
       "firstName": "enterprise-manager",
       "lastName": "MariaDB",
-      "email": "keycloak-user@mariadb.com",
+      "email": "keycloak-user@example.com",
       "emailVerified": true,
       "enabled": true,
       "credentials": [
