@@ -21,6 +21,22 @@ Docker-based MariaDB topologies for testing Enterprise Manager. The `mema-agent`
    EOF
    ```
 
+   **Optional — override the EM frontend for E2E tests.** Set `SUPERMAX_GUI_DIR` to a locally-built `enterprise-manager-frontend/dist/` to run Playwright/E2E suites against a known frontend revision (e.g. a PR build) served by the real EM backend. The bind mount is read-only; subsequent `vite build` runs are reflected on the next page reload — no container restart needed.
+
+   ```bash
+   cat >> <path-to-enterprise-manager>/.env <<'EOF'
+   SUPERMAX_GUI_DIR=/home/user/workspace/enterprise-manager-frontend/dist
+   EOF
+   ```
+
+   **Reverting to the original GUI.** Leave `SUPERMAX_GUI_DIR` unset (or remove it from `.env`) and bring the service back up — Compose detects the mount-source change and recreates `supermax` on its own. The mount falls back to the `supermax-original-gui` named volume, which Docker auto-populates from the image's shipped GUI on first start:
+
+   ```bash
+   docker compose up -d supermax
+   ```
+
+   After a `supermax` image upgrade, run `docker volume rm enterprise-manager-supermax-original-gui` once to refresh the cached copy (or `docker compose down -v` in CI).
+
 3. **Start the containers:**
    ```bash
    cd <path-to-enterprise-manager>
@@ -59,3 +75,4 @@ After saving, log out and press F5 to reveal the **Sign In With SSO** button. Cl
 ## Configuration
 
 `ENTERPRISE_TOKEN` is consumed at build time and scrubbed from the final image. The agent endpoint is derived from `MEMA_HOSTNAME` in `.env` (the existing Enterprise Manager URL with the trailing `:port` stripped).
+

@@ -202,8 +202,30 @@ volumes:
     name: enterprise-manager-mxs-server-1
   mxs-server-2-data:
     name: enterprise-manager-mxs-server-2
+  # Fallback target for the supermax GUI mount when `SUPERMAX_GUI_DIR` is
+  # unset. On first start docker auto-populates this empty volume from the
+  # image's `/usr/share/supermax/gui`, so the container runs the original
+  # GUI shipped in the image. The volume caches that initial copy — after
+  # a supermax image upgrade, run
+  # `docker volume rm enterprise-manager-supermax-original-gui` to refresh.
+  supermax-original-gui:
+    name: enterprise-manager-supermax-original-gui
 
 services:
+  # Mount strategy for the supermax GUI:
+  #   - `SUPERMAX_GUI_DIR` set in .env  → bind-mount that host path (e.g.
+  #     the `dist/` produced by `vite build` in enterprise-manager-frontend),
+  #     so E2E tests run against a custom frontend revision. Read-only so
+  #     the container can't write back; subsequent `vite build` runs are
+  #     reflected on the next page reload — no container restart needed.
+  #   - `SUPERMAX_GUI_DIR` unset       → use the `supermax-original-gui`
+  #     named volume, which auto-populates from the image's baked-in GUI on
+  #     first start. The variable is fully optional (no override required
+  #     in CI defaults).
+  supermax:
+    volumes:
+      - ${SUPERMAX_GUI_DIR:-supermax-original-gui}:/usr/share/supermax/gui:ro
+
   standalone:
     <<: *mariadb-mema
     container_name: enterprise-manager-standalone
