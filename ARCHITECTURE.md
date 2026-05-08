@@ -66,14 +66,19 @@ export VITE_API_BASE_URL=/api && npm run build-only
 ```
 
 
-When running e2e tests locally against the new or old backend, also create an `.env.development` file in the `enterprise-manager-frontend` repo pointing `VITE_MEMA_API` at your `MEMA_HOSTNAME`:
+For running e2e tests locally, configure the env vars via `.env.development` in the `enterprise-manager-frontend` repo:
+
+**Against the new backend:**
 
 ```
-VITE_MEMA_API=<your MEMA_HOSTNAME>    # e.g. https://192.168.1.116:8090
-```
-
-The new backend exposes its endpoints under `/api` (proxied by `nginx`), whereas the combined `supermax` image in the current architecture serves them at the root. So to run e2e tests locally against the new backend:
-```
-VITE_MEMA_API=<your MEMA_HOSTNAME>    # e.g. https://192.168.1.116:8090
 VITE_API_BASE_URL=/api
+VITE_PLAYWRIGHT_BASE_URL=<your MEMA_HOSTNAME>    # e.g. https://192.168.1.116:8090
 ```
+
+**Against the old backend:**
+
+```
+VITE_PLAYWRIGHT_BASE_URL=<your MEMA_HOSTNAME>    # e.g. https://192.168.1.116:8090
+```
+
+The `VITE_API_BASE_URL` override is only needed for the new backend, since the old combined `supermax` image serves the REST API at the root.
