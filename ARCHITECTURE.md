@@ -67,10 +67,8 @@ export VITE_API_BASE_URL=/api && npm run build-only
 
 The new backend exposes its endpoints under `/api` (proxied by `nginx`), whereas the combined `supermax` image in the current architecture serves them at the root.
 
-When running e2e tests locally against the new backend, also create an `.env.development` file in the `enterprise-manager-frontend` repo pointing `VITE_MEMA_API` at your `MEMA_HOSTNAME` with `/api` appended — that's the path where the REST API backend is exposed (proxied by `nginx`):
+When running e2e tests locally against the new or old backend, also create an `.env.development` file in the `enterprise-manager-frontend` repo pointing `VITE_MEMA_API` at your `MEMA_HOSTNAME`:
 
 ```
-VITE_MEMA_API=<your MEMA_HOSTNAME>/api    # e.g. https://192.168.1.116:8090/api
+VITE_MEMA_API=<your MEMA_HOSTNAME>    # e.g. https://192.168.1.116:8090
 ```
-
-For the old (combined) backend, the `/api` suffix is **not** needed — the REST API is served at the root, so `VITE_MEMA_API=<your MEMA_HOSTNAME>` is sufficient.
