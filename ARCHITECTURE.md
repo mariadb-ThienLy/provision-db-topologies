@@ -69,16 +69,18 @@ export VITE_API_BASE_URL=/api && npm run build-only
 For running e2e tests locally, configure the env vars via `.env.development` in the `enterprise-manager-frontend` repo:
 
 **Against the new backend:**
-
+The `VITE_API_BASE_URL` override is only needed for the new backend, since the old combined `supermax` image serves the REST API at the root.
 ```
 VITE_API_BASE_URL=/api
 VITE_PLAYWRIGHT_BASE_URL=<your MEMA_HOSTNAME>    # e.g. https://192.168.1.116:8090
+USERNAME=admin
+PASSWORD=mariadb
 ```
 
 **Against the old backend:**
 
 ```
 VITE_PLAYWRIGHT_BASE_URL=<your MEMA_HOSTNAME>    # e.g. https://192.168.1.116:8090
+USERNAME=admin
+PASSWORD=mariadb
 ```
-
-The `VITE_API_BASE_URL` override is only needed for the new backend, since the old combined `supermax` image serves the REST API at the root.
