@@ -63,9 +63,15 @@ After saving, log out and press F5 to reveal the **Sign In With SSO** button. Cl
 
 ## Running E2E Tests Locally
 
-Override the bundled GUI with a locally-built `enterprise-manager-frontend/dist/` to run Playwright/E2E suites against a known frontend revision.
+### Against the new backend
 
-1. **Clone and build the frontend** by following the README in the enterprise manager frontend` repository.
+The bundled `enterprise-manager-frontend` image already supports the new backend and e2e tests, so no local FE build or `SUPERMAX_GUI_DIR` override is needed. Just configure `.env.development` in the `enterprise-manager-frontend` repo — see [ARCHITECTURE.md](ARCHITECTURE.md#new-architecture-separated-backendfrontend).
+
+### Against the old backend
+
+The old backend requires overriding the bundled GUI with a locally-built `enterprise-manager-frontend/dist/` via `SUPERMAX_GUI_DIR`.
+
+1. **Clone and build the frontend** by following the README in the `enterprise-manager-frontend` repository.
 
 2. **Set `SUPERMAX_GUI_DIR` in `.env`:**
 
@@ -82,9 +88,7 @@ Override the bundled GUI with a locally-built `enterprise-manager-frontend/dist/
    docker compose restart supermax
    ```
 
-For the upcoming separated backend/frontend architecture, see [ARCHITECTURE.md](ARCHITECTURE.md#new-architecture-separated-backendfrontend).
-
-### Reverting to the original GUI
+### Reverting to the bundled GUI
 
 Leave `SUPERMAX_GUI_DIR` unset (or remove it from `.env`) and bring the service back up:
 

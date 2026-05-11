@@ -50,7 +50,9 @@ services:
 
 ### New architecture (separated backend/frontend)
 
-In the `enterprise-manager-distrib` distribution, `supermax` is the backend only and a separate `nginx` service (image: `enterprise-manager-frontend`) serves the GUI from `/usr/share/nginx/html`. Extend the `nginx` service in `docker-compose.override.yml`:
+In the `enterprise-manager-distrib` distribution, `supermax` is the backend only and a separate `nginx` service (image: `enterprise-manager-frontend`) serves the GUI from `/usr/share/nginx/html`. The bundled image already supports the new backend, so running the latest e2e tests against it requires no override.
+
+To run a locally-built frontend against the new backend — e.g. when developing new features or extending tests before opening a PR (so unmerged tests aren't yet in the bundled image) — extend the `nginx` service in `docker-compose.override.yml`:
 
 ```yaml
 services:
