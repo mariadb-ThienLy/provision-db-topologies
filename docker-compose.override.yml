@@ -277,7 +277,6 @@ services:
     build:
       dockerfile_inline: |
         FROM mariadb:11
-    image: enterprise-manager-replica
     container_name: enterprise-manager-replica
     networks: [db-net]
     ports:
@@ -310,7 +309,6 @@ services:
     build:
       dockerfile_inline: |
         FROM mariadb:11
-    image: enterprise-manager-galera-1
     container_name: enterprise-manager-galera-1
     restart: always
     # Give Galera time to coordinate a clean shutdown on OS reboot. Without
@@ -363,7 +361,6 @@ services:
     build:
       dockerfile_inline: |
         FROM mariadb:11
-    image: enterprise-manager-galera-2
     container_name: enterprise-manager-galera-2
     restart: always
     stop_grace_period: 60s
@@ -413,7 +410,6 @@ services:
     build:
       dockerfile_inline: |
         FROM mariadb:11
-    image: enterprise-manager-galera-3
     container_name: enterprise-manager-galera-3
     restart: always
     stop_grace_period: 60s
@@ -466,7 +462,6 @@ services:
     build:
       dockerfile_inline: |
         FROM mariadb:11
-    image: enterprise-manager-mxs-server-1
     container_name: enterprise-manager-mxs-server-1
     restart: always
     networks: [mxs-net]
@@ -496,7 +491,6 @@ services:
     build:
       dockerfile_inline: |
         FROM mariadb:11
-    image: enterprise-manager-mxs-server-2
     container_name: enterprise-manager-mxs-server-2
     restart: always
     networks: [mxs-net]
