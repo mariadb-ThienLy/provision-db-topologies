@@ -100,7 +100,7 @@ To revert to the bundled GUI later, remove `SUPERMAX_GUI_DIR` from `.env` and ru
 - **Standalone** — Single MariaDB server on port 3306
 - **Primary/Replica** — Primary on port 3307, replica on port 3308
 - **Galera Cluster** — Three-node cluster on ports 3309–3311
-- **Primary/Replica with MaxScale** — MaxScale REST API on port 8989, SQL listener on port 4006, backends on ports 3312–3314
+- **Primary/Replica with MaxScale** — MaxScale REST API on port 8989, SQL listener on port 4006, backends on ports 3312–3314. A second MaxScale (`maxscale-2`) fronts the same backends on ports 8999 (REST) and 4007 (SQL), forming a cooperative-monitoring pair — see [ARCHITECTURE.md](ARCHITECTURE.md#second-maxscale-cooperative-monitoring)
 
 ## Keycloak (OIDC SSO)
 

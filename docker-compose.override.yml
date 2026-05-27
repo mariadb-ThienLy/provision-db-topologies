@@ -109,6 +109,9 @@ configs:
     # mxs-net. admin/mariadb matches the user seeded by mxs-server-1-init.
     # admin_oidc_* points at the EM origin (MEMA_HOSTNAME from .env) so the
     # MaxScale GUI can SSO against EM as the `admin` service account.
+    # Shared by both `maxscale` and `maxscale-2`. Both monitors carry the same
+    # name and `cooperative_monitoring_locks`, so the two instances elect a
+    # single active monitor and only one runs auto_failover/auto_rejoin.
     content: |
       [maxscale]
       threads=auto
@@ -151,6 +154,7 @@ configs:
       monitor_interval=2000ms
       auto_failover=true
       auto_rejoin=true
+      cooperative_monitoring_locks=majority_of_running
 
       [Read-Write-Service]
       type=service
@@ -540,6 +544,46 @@ services:
       MEMA_HOSTNAME: ${MEMA_HOSTNAME}
       MEMA_CLUSTER_NAME: primary-replica-maxscale-docker
       MEMA_HOST_NAME: primary-replica-maxscale-docker@maxscale_1
+    configs:
+      - source: maxscale-cnf
+        target: /etc/maxscale.cnf
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sf -o /dev/null -u admin:mariadb http://127.0.0.1:8989/v1/maxscale || exit 1
+      interval: 10s
+      retries: 30
+      start_period: 60s
+
+  # A second, bare MaxScale fronting the same backends as `maxscale`, exposed
+  # on different host ports (SQL 4007, REST/GUI 8999). No mema-agent runs and
+  # it is not registered in EM. It shares the `maxscale-cnf` config — inside
+  # its own network namespace it still listens on 8989/4006, so only the
+  # published ports differ. The image's entrypoint also starts the agent, so
+  # it's overridden here to run MaxScale alone; the override first recreates
+  # /run/maxscale (the runtime dir the wrapper sets up, lost because /run is a
+  # fresh tmpfs), then execs maxscale so SIGTERM reaches it for clean shutdown.
+  maxscale-2:
+    build:
+      context: ./provision
+      dockerfile: Dockerfile.maxscale-mema
+      args:
+        ENTERPRISE_TOKEN: ${ENTERPRISE_TOKEN}
+    container_name: enterprise-manager-maxscale-2
+    restart: always
+    networks: [mxs-net]
+    ports:
+      - '127.0.0.1:4007:4006'
+      - '127.0.0.1:8999:8989'
+    depends_on:
+      mxs-server-1:
+        condition: service_healthy
+      mxs-server-2:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - install -d -m 0755 -o maxscale -g maxscale /run/maxscale && exec maxscale --user=maxscale --nodaemon
     configs:
       - source: maxscale-cnf
         target: /etc/maxscale.cnf

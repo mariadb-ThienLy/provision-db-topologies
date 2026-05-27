@@ -4,7 +4,7 @@ How the topologies are wired, how `mema-agent` registration and server discovery
 
 ## mema-agent
 
-The mema-agent is installed and registered on three servers — `standalone`, `primary`, and `maxscale`. It reports metrics to EM via OTLP. The remaining servers (`replica`, Galera nodes, `mxs-server-1`/`-2`/`-3`) run without the agent.
+The mema-agent is installed and registered on three servers — `standalone`, `primary`, and `maxscale`. It reports metrics to EM via OTLP. The remaining servers (`replica`, Galera nodes, `mxs-server-1`/`-2`/`-3`) and the second MaxScale (`maxscale-2`) run without the agent.
 
 Agent installation is independent of topology registration in EM: the agent reports metrics, but the server still needs to be added as a topology in EM UI separately.
 
@@ -16,6 +16,12 @@ All topologies are added through the EM UI (or programmatically via e2e tests). 
 - **MaxScale** — once the MaxScale topology is added, the EM backend reaches out to MaxScale's REST API to enumerate the backends:
   - `mxs-server-1` (port 3312) and `mxs-server-2` (port 3313) — discovered as Up.
   - `mxs-server-3` — configured at the RFC 5737 TEST-NET-3 address `192.0.2.3:3314` with no matching service. `mariadbmon` always reports it as Down, exercising EM's handling of an unreachable backend.
+
+## Second MaxScale (cooperative monitoring)
+
+`maxscale-2` is a second MaxScale fronting the same backends as `maxscale`, exposed on different host ports — REST/GUI on `8999`, SQL on `4007` (vs. `8989`/`4006` for the first). It runs no `mema-agent` and is not registered in EM; it exists to exercise MaxScale's cooperative monitoring.
+
+Both instances share the `maxscale-cnf` config, so their monitors carry the same name and `cooperative_monitoring_locks=majority_of_running`. The two MaxScales then elect a single active monitor that holds the lock — only that instance runs `auto_failover`/`auto_rejoin`, while the other stays passive. This mirrors a production HA setup where two MaxScales front one cluster without both attempting failover.
 
 ## `MEMA_HOSTNAME`
 
