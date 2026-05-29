@@ -31,22 +31,6 @@ MEMA_HOSTNAME=https://192.168.1.116:8090
 
 See [ARCHITECTURE.md#mema_hostname](ARCHITECTURE.md#mema_hostname) for why `localhost` fails from inside containers.
 
-For e2e against the **old backend**, first build the FE locally (see the `enterprise-manager-frontend` repo README for prerequisites):
-
-```bash
-cd /path/to/enterprise-manager-frontend
-npm ci
-npm run build-only
-```
-
-Then point `SUPERMAX_GUI_DIR` at the resulting `dist/` (see [ARCHITECTURE.md#gui-override-mount-strategy](ARCHITECTURE.md#gui-override-mount-strategy) for how the bind mount and fallback volume work):
-
-```bash
-cat >> <em-dir>/.env <<'EOF'
-SUPERMAX_GUI_DIR=/path/to/enterprise-manager-frontend/dist
-EOF
-```
-
 **3. Start the stack**
 
 ```bash
@@ -54,17 +38,6 @@ cd <em-dir> && docker compose up -d --wait
 ```
 
 **4. Configure `.env.development` in the `enterprise-manager-frontend` repo**
-
-Against the **new backend** (bundled FE image):
-
-```
-VITE_API_BASE_URL=/api
-VITE_PLAYWRIGHT_BASE_URL=<MEMA_HOSTNAME>
-USERNAME=admin
-PASSWORD=mariadb
-```
-
-Against the **old backend** (locally-built FE via `SUPERMAX_GUI_DIR`):
 
 ```
 VITE_PLAYWRIGHT_BASE_URL=<MEMA_HOSTNAME>
@@ -86,14 +59,6 @@ Then run the suite:
 npm run test:e2e        # headless
 npm run test:e2e:ui     # UI mode — recommended for inspecting failures
 ```
-
-For the old-backend path, restart `supermax` after each `vite build` so it picks up the new bundle:
-
-```bash
-docker compose restart supermax
-```
-
-To revert to the bundled GUI later, remove `SUPERMAX_GUI_DIR` from `.env` and run `docker compose up -d supermax`.
 
 ## Available Topologies
 

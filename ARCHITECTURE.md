@@ -38,27 +38,9 @@ Consumed at image build time to fetch the enterprise repositories, then scrubbed
 
 ## GUI override mount strategy
 
-`docker-compose.override.yml` defines a bind mount for the EM frontend, controlled by `SUPERMAX_GUI_DIR`:
+`supermax` is the backend REST API only; a separate `nginx` service (image: `enterprise-manager-frontend`) serves the GUI from `/usr/share/nginx/html`. The bundled image already ships a frontend that works against the backend, so running the latest e2e tests against it requires no override.
 
-- **`SUPERMAX_GUI_DIR` set** → bind-mounts the host directory (e.g. a locally-built `enterprise-manager-frontend/dist/`) read-only into the frontend container.
-- **`SUPERMAX_GUI_DIR` unset** → falls back to the `supermax-original-gui` named volume, which Docker auto-populates from the image's shipped GUI on first start.
-
-### Current architecture (combined backend/frontend)
-
-The `supermax` image serves both the backend and the frontend from `/usr/share/supermax/gui`. The override is wired in this repo:
-
-```yaml
-services:
-  supermax:
-    volumes:
-      - ${SUPERMAX_GUI_DIR:-supermax-original-gui}:/usr/share/supermax/gui:ro
-```
-
-### New architecture (separated backend/frontend)
-
-In the `enterprise-manager-distrib` distribution, `supermax` is the backend only and a separate `nginx` service (image: `enterprise-manager-frontend`) serves the GUI from `/usr/share/nginx/html`. The bundled image already supports the new backend, so running the latest e2e tests against it requires no override.
-
-To run a locally-built frontend against the new backend — e.g. when developing new features or extending tests before opening a PR (so unmerged tests aren't yet in the bundled image) — extend the `nginx` service in `docker-compose.override.yml`:
+To run a locally-built frontend — e.g. when developing new features or extending tests before opening a PR (so unmerged tests aren't yet in the bundled image) — extend the `nginx` service in `docker-compose.override.yml`:
 
 ```yaml
 services:
@@ -67,25 +49,13 @@ services:
       - ${SUPERMAX_GUI_DIR}:/usr/share/nginx/html:ro
 ```
 
-When building the frontend for this architecture, set `VITE_API_BASE_URL=/api` before running the build:
+When building the frontend, set `VITE_API_BASE_URL=/api` before running the build, since the backend serves the REST API under `/api`:
 
 ```bash
 export VITE_API_BASE_URL=/api && npm run build-only
 ```
 
-
 For running e2e tests locally, configure the env vars via `.env.development` in the `enterprise-manager-frontend` repo:
-
-**Against the new backend:**
-The `VITE_API_BASE_URL` override is only needed for the new backend, since the old combined `supermax` image serves the REST API at the root.
-```
-VITE_API_BASE_URL=/api
-VITE_PLAYWRIGHT_BASE_URL=<your MEMA_HOSTNAME>    # e.g. https://192.168.1.116:8090
-USERNAME=admin
-PASSWORD=mariadb
-```
-
-**Against the old backend:**
 
 ```
 VITE_PLAYWRIGHT_BASE_URL=<your MEMA_HOSTNAME>    # e.g. https://192.168.1.116:8090
