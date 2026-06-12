@@ -31,7 +31,7 @@ MEMA_HOSTNAME=https://192.168.1.116:8090
 
 See [ARCHITECTURE.md#mema_hostname](ARCHITECTURE.md#mema_hostname) for why `localhost` fails from inside containers.
 
-For e2e against the **old backend**, first build the FE locally (see the `enterprise-manager-frontend` repo README for prerequisites):
+For e2e against the **old backend**, first build the FE locally on this branch refactor/support-tests-against-old-be (see the `enterprise-manager-frontend` repo README for prerequisites):
 
 ```bash
 cd /path/to/enterprise-manager-frontend
@@ -54,17 +54,6 @@ cd <em-dir> && docker compose up -d --wait
 ```
 
 **4. Configure `.env.development` in the `enterprise-manager-frontend` repo**
-
-Against the **new backend** (bundled FE image):
-
-```
-VITE_API_BASE_URL=/api
-VITE_PLAYWRIGHT_BASE_URL=<MEMA_HOSTNAME>
-USERNAME=admin
-PASSWORD=mariadb
-```
-
-Against the **old backend** (locally-built FE via `SUPERMAX_GUI_DIR`):
 
 ```
 VITE_PLAYWRIGHT_BASE_URL=<MEMA_HOSTNAME>
