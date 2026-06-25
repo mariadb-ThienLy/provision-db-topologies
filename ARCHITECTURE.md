@@ -38,14 +38,14 @@ Consumed at image build time to fetch the enterprise repositories, then scrubbed
 
 ## GUI override mount strategy
 
-`docker-compose.override.yml` defines a bind mount for the EM frontend, controlled by `SUPERMAX_GUI_DIR`:
+`docker-compose.override.yml` is a standalone overlay, separate from the topology stack (`docker-compose.yml`). It is copied into the **EM deployment dir**, where Compose merges it with that deployment's own `docker-compose.yml` (the one defining the `supermax`/`nginx` services). It defines a bind mount for the EM frontend, controlled by `SUPERMAX_GUI_DIR`:
 
 - **`SUPERMAX_GUI_DIR` set** → bind-mounts the host directory (e.g. a locally-built `enterprise-manager-frontend/dist/`) read-only into the frontend container.
 - **`SUPERMAX_GUI_DIR` unset** → falls back to the `supermax-original-gui` named volume, which Docker auto-populates from the image's shipped GUI on first start.
 
-### Current architecture (combined backend/frontend)
+### Old architecture (combined backend/frontend)
 
-The `supermax` image serves both the backend and the frontend from `/usr/share/supermax/gui`. The override is wired in this repo:
+The `supermax` image serves both the backend and the frontend from `/usr/share/supermax/gui`. This is the case the shipped `docker-compose.override.yml` targets:
 
 ```yaml
 services:
@@ -67,28 +67,26 @@ services:
       - ${SUPERMAX_GUI_DIR}:/usr/share/nginx/html:ro
 ```
 
-When building the frontend for this architecture, set `VITE_API_BASE_URL=/api` before running the build:
+The frontend targets this architecture by default — it calls the REST API at `/api`, so no build-time configuration is needed:
 
 ```bash
-export VITE_API_BASE_URL=/api && npm run build-only
+npm run build-only
 ```
-
 
 For running e2e tests locally, configure the env vars via `.env.development` in the `enterprise-manager-frontend` repo:
 
-**Against the new backend:**
-The `VITE_API_BASE_URL` override is only needed for the new backend, since the old combined `supermax` image serves the REST API at the root.
+**Against the new backend (default):**
 ```
-VITE_API_BASE_URL=/api
 VITE_PLAYWRIGHT_BASE_URL=<your MEMA_HOSTNAME>    # e.g. https://192.168.1.116:8090
 USERNAME=admin
 PASSWORD=mariadb
 ```
 
 **Against the old backend:**
+The old combined `supermax` image serves the REST API at the root, so point the frontend at `/` instead of `/api` by editing three source files before building:
 
-```
-VITE_PLAYWRIGHT_BASE_URL=<your MEMA_HOSTNAME>    # e.g. https://192.168.1.116:8090
-USERNAME=admin
-PASSWORD=mariadb
-```
+- `e2e/api.ts` — drop the `/api` suffix from `API_URL`
+- `src/apiClient.js` — change `baseURL: '/api'` to `baseURL: '/'`
+- `src/components/workspace/setupMariaDBWorkspace.ts` — change `baseURL: '/api'` to `baseURL: '/'`
+
+The `.env.development` is identical to the new-backend case. The `refactor/support-tests-against-old-be` branch already carries these edits but is no longer maintained.
