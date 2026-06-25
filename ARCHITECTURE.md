@@ -38,7 +38,7 @@ Consumed at image build time to fetch the enterprise repositories, then scrubbed
 
 ## GUI override mount strategy
 
-`docker-compose.override.yml` is a standalone overlay, separate from the topology stack (`docker-compose.yml`). It is copied into the **EM deployment dir**, where Compose merges it with that deployment's own `docker-compose.yml` (the one defining the `supermax`/`nginx` services). It defines a bind mount for the EM frontend, controlled by `SUPERMAX_GUI_DIR`:
+`gui-override/docker-compose.override.yml` is a standalone overlay, separate from the topology stack (`docker-compose.yml`). It lives in its own `gui-override/` dir precisely so it does **not** auto-merge into the topology stack on a bare `docker compose up`. It is copied into the **EM deployment dir**, where Compose merges it with that deployment's own `docker-compose.yml` (the one defining the `supermax`/`nginx` services). It defines a bind mount for the EM frontend, controlled by `SUPERMAX_GUI_DIR`:
 
 - **`SUPERMAX_GUI_DIR` set** → bind-mounts the host directory (e.g. a locally-built `enterprise-manager-frontend/dist/`) read-only into the frontend container.
 - **`SUPERMAX_GUI_DIR` unset** → falls back to the `supermax-original-gui` named volume, which Docker auto-populates from the image's shipped GUI on first start.

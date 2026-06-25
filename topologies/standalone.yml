@@ -1,0 +1,63 @@
+# Standalone single MariaDB server (mema-agent on the server).
+#
+# EM UI registration metadata (for Playwright tests):
+#   Topology:       Standalone server                      (mema-agent)
+#   Database name:  standalone-docker
+#   Server name:    standalone-server
+#   Address:        127.0.0.1
+#   Port:           3306
+#   User:           root
+#   Password:       mariadb
+
+# Custom image with the `mema-agent` deb preinstalled, used by the servers
+# that exercise the agent registration path (`standalone` here, `primary` in
+# primary-replica.yml). The wrapper entrypoint (provision/mema-entrypoint.sh)
+# starts mariadbd, runs `mema-agent setup --skip-start` once using the MEMA_*
+# env vars below, then runs `mema-agent run --verbose` in the foreground.
+# ENTERPRISE_TOKEN is consumed at build time only and scrubbed from the
+# resulting image. No explicit image tag is set — compose auto-names each as
+# `<project>-<service>`, sharing layers via BuildKit cache.
+x-mariadb-mema: &mariadb-mema
+  build:
+    context: ../provision
+    dockerfile: Dockerfile.mariadb-mema
+    args:
+      ENTERPRISE_TOKEN: ${ENTERPRISE_TOKEN}
+
+# Env values for the mema-agent services. Merged into `environment:` via `<<:`.
+# `MEMA_HOSTNAME` comes from `.env` (e.g. https://192.168.1.116:8090); the
+# entrypoint strips the trailing :port to derive the agent endpoint.
+x-mema-env: &mema-env
+  MARIADB_ROOT_PASSWORD: mariadb
+  MEMA_HOSTNAME: ${MEMA_HOSTNAME}
+
+networks:
+  # Shared with primary-replica.yml. Bridge gives each container its own
+  # private 127.0.0.1, so the two mema-agents (standalone, primary) can bind
+  # their default exporter ports (:18901 / :18902) without clashing on the host.
+  db-net:
+    driver: bridge
+
+volumes:
+  standalone-data:
+    name: enterprise-manager-standalone
+
+services:
+  standalone:
+    <<: *mariadb-mema
+    container_name: enterprise-manager-standalone
+    networks: [db-net]
+    ports:
+      - '127.0.0.1:3306:3306'
+    restart: "no"
+    volumes:
+      - standalone-data:/var/lib/mysql
+    environment:
+      <<: *mema-env
+      MEMA_CLUSTER_NAME: standalone-docker
+      MEMA_HOST_NAME: standalone-docker@standalone-server
+    healthcheck:
+      test: ['CMD', 'healthcheck.sh', '--connect']
+      interval: 5s
+      retries: 20
+      start_period: 30s

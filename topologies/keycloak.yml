@@ -1,0 +1,30 @@
+# Keycloak IdP for SSO testing. The realm is imported on first start via
+# `--import-realm` (IGNORE_EXISTING — re-runs are no-ops). The wrapper
+# entrypoint expands `${MEMA_HOSTNAME}` in the realm JSON before kc.sh starts,
+# since Keycloak's own substitution doesn't apply to realm JSON.
+
+configs:
+  keycloak-realm:
+    file: ../provision/keycloak-realm.json
+  keycloak-entrypoint:
+    file: ../provision/keycloak-entrypoint.sh
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak
+    restart: "no"
+    ports:
+      - 8080:8080
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # Substituted into `${MEMA_HOSTNAME}` placeholders in the realm template
+      # by the wrapper entrypoint before kc.sh runs.
+      MEMA_HOSTNAME: ${MEMA_HOSTNAME}
+    entrypoint: ['sh', '/usr/local/bin/keycloak-entrypoint.sh']
+    command: start-dev --import-realm
+    configs:
+      - source: keycloak-realm
+        target: /tmp/keycloak-realm.json
+      - source: keycloak-entrypoint
+        target: /usr/local/bin/keycloak-entrypoint.sh

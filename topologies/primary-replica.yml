@@ -1,0 +1,117 @@
+# Primary/Replica MariaDB pair (mema-agent on the primary). EM auto-discovers
+# the replica via `SHOW SLAVE HOSTS`.
+#
+# EM UI registration metadata (for Playwright tests):
+#   Topology:       Primary/Replica
+#   Database name:  primary-replica-docker
+#   Servers:
+#     - primary    127.0.0.1:3307  root / mariadb         (mema-agent)
+#     - replica    127.0.0.1:3308  root / mariadb
+
+# Custom image with the `mema-agent` deb preinstalled (see standalone.yml for
+# the full build/entrypoint rationale). Only `primary` uses it here; `replica`
+# runs plain `mariadb:11`.
+x-mariadb-mema: &mariadb-mema
+  build:
+    context: ../provision
+    dockerfile: Dockerfile.mariadb-mema
+    args:
+      ENTERPRISE_TOKEN: ${ENTERPRISE_TOKEN}
+
+# Env values for the mema-agent services. Merged into `environment:` via `<<:`.
+# `MEMA_HOSTNAME` comes from `.env`; the entrypoint strips the trailing :port
+# to derive the agent endpoint.
+x-mema-env: &mema-env
+  MARIADB_ROOT_PASSWORD: mariadb
+  MEMA_HOSTNAME: ${MEMA_HOSTNAME}
+
+networks:
+  # Shared with standalone.yml. Bridge gives each container its own private
+  # 127.0.0.1, so the two mema-agents (standalone, primary) can bind their
+  # default exporter ports (:18901 / :18902) without clashing on the host.
+  db-net:
+    driver: bridge
+
+volumes:
+  primary-data:
+    name: enterprise-manager-primary
+  replica-data:
+    name: enterprise-manager-replica
+
+configs:
+  primary-init:
+    content: |
+      CREATE USER IF NOT EXISTS 'repl'@'%' IDENTIFIED BY 'replpw';
+      GRANT REPLICATION SLAVE ON *.* TO 'repl'@'%';
+      RESET MASTER;
+  replica-init:
+    # Replica reaches primary via service-name DNS on db-net.
+    content: |
+      CHANGE MASTER TO
+        MASTER_HOST='primary',
+        MASTER_PORT=3307,
+        MASTER_USER='repl',
+        MASTER_PASSWORD='replpw',
+        MASTER_USE_GTID=slave_pos;
+      START SLAVE;
+
+services:
+  primary:
+    <<: *mariadb-mema
+    container_name: enterprise-manager-primary
+    networks: [db-net]
+    ports:
+      - '127.0.0.1:3307:3307'
+    restart: "no"
+    volumes:
+      - primary-data:/var/lib/mysql
+    command: >-
+      --port=3307
+      --server-id=1
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+    environment:
+      <<: *mema-env
+      MEMA_CLUSTER_NAME: primary-replica-docker
+      MEMA_HOST_NAME: primary-replica-docker@primary
+      MEMA_DB_PORT: '3307'
+    configs:
+      - source: primary-init
+        target: /docker-entrypoint-initdb.d/99-replication-user.sql
+    healthcheck:
+      test: ['CMD', 'healthcheck.sh', '--connect']
+      interval: 5s
+      retries: 30
+      start_period: 30s
+
+  replica:
+    build:
+      dockerfile_inline: |
+        FROM mariadb:11
+    container_name: enterprise-manager-replica
+    networks: [db-net]
+    ports:
+      - '127.0.0.1:3308:3308'
+    restart: "no"
+    volumes:
+      - replica-data:/var/lib/mysql
+    depends_on:
+      primary:
+        condition: service_healthy
+    command: >-
+      --port=3308
+      --server-id=2
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --report-host=replica
+      --report-port=3308
+    environment:
+      MARIADB_ROOT_PASSWORD: mariadb
+    configs:
+      - source: replica-init
+        target: /docker-entrypoint-initdb.d/99-start-replication.sql
+    healthcheck:
+      test: ['CMD', 'healthcheck.sh', '--connect']
+      interval: 5s
+      retries: 30
+      start_period: 30s
